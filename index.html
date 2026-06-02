@@ -309,6 +309,7 @@ input[type=date].finput{color-scheme:dark;}
       <div class="rt-card"><div class="rt-label">4 players</div><div class="rt-wrap"><span class="rt-sym">$</span><input type="number" class="rt-inp" id="rc_4" value="75"></div></div>
     </div>
     <button class="vbtn p" onclick="saveRatesOb()" style="margin-top:10px;">NEXT →</button>
+    <button class="back-link" onclick="go('vReg')">← Back</button>
   </div>
 </div>
 
@@ -321,6 +322,7 @@ input[type=date].finput{color-scheme:dark;}
     <div class="fg"><label class="flabel">Monthly goal ($)</label><input type="number" class="finput" id="obMo" value="7000"></div>
     <div class="fg"><label class="flabel">Summer goal ($)</label><input type="number" class="finput" id="obSu" value="20000"></div>
     <button class="vbtn p" onclick="finishOb()" style="margin-top:8px;">LET'S GO →</button>
+    <button class="back-link" onclick="go('vRates')">← Back</button>
   </div>
 </div>
 
@@ -455,7 +457,7 @@ input[type=date].finput{color-scheme:dark;}
         <p style="font-size:12px;color:var(--dim);margin-bottom:11px;">Signed in as <span id="settUser" style="color:var(--chalk);font-weight:500;"></span></p>
         <button class="vbtn d" onclick="toggleSO()">SIGN OUT</button>
       </div>
-      <div class="ver">NetO v3.0</div>
+      <div class="ver">NetO v3.1</div>
     </div>
 
   </div>
@@ -544,6 +546,13 @@ function go(id){
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));
   document.getElementById(id)?.classList.add('on');
   if(id==='vLogin') renderProfiles();
+  if(id==='vRatesEdit') populateRatesEdit();
+  if(id==='vReg'){
+    rPinBuf=''; updRPin(); chkReg();
+    document.getElementById('rName').value='';
+    document.getElementById('rSport').value='';
+    document.getElementById('rErr').textContent='';
+  }
 }
 
 function goSc(name,el){
@@ -666,7 +675,7 @@ function toggleSO(){ document.getElementById('soBox').classList.toggle('on'); go
 function doSignOut(){ lsDel(KS); CU=null; S={sessions:[],extras:[],goals:dG(),rates:dR()}; document.getElementById('soBox').classList.remove('on'); go('vSplash'); }
 
 // ── HELPERS ───────────────────────────────────────────────────────
-function todayStr(){ return new Date().toISOString().split('T')[0]; }
+function todayStr(){ const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 function fmtD(s){ return new Date(s+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}); }
 function getWD(off=0){
   const d=new Date(); const dy=d.getDay();
@@ -674,9 +683,9 @@ function getWD(off=0){
   return Array.from({length:7},(_,i)=>{const dd=new Date(d);dd.setDate(d.getDate()+i);return dd.toISOString().split('T')[0];});
 }
 function getMD(){
-  const n=new Date(); const dates=[];
-  for(let d=new Date(n.getFullYear(),n.getMonth(),1);d<=new Date(n.getFullYear(),n.getMonth()+1,0);d.setDate(d.getDate()+1))
-    dates.push(new Date(d).toISOString().split('T')[0]);
+  const n=new Date(); const y=n.getFullYear(), m=n.getMonth();
+  const last=new Date(y,m+1,0).getDate(); const dates=[];
+  for(let i=1;i<=last;i++) dates.push(`${y}-${String(m+1).padStart(2,'0')}-${String(i).padStart(2,'0')}`);
   return dates;
 }
 function getWkN(){
@@ -715,15 +724,17 @@ function renderToday(){
   const wd=getWD(0); const ws=S.sessions.filter(s=>wd.includes(s.date)); const we=S.extras.filter(e=>wd.includes(e.date));
   const wt=ws.reduce((a,x)=>a+x.amount,0)+we.reduce((a,x)=>a+x.amount,0);
   set('sT',`$${tt.toFixed(0)}`); set('sTN',`${ts.length} session${ts.length!==1?'s':''}`);
-  set('sW',`$${wt.toFixed(0)}`); set('sWN',`${ws.length} sessions`);
+  set('sW',`$${wt.toFixed(0)}`); set('sWN',`${ws.length} session${ws.length!==1?'s':''}`);
   set('sTip',`$${we.filter(e=>e.type==='tips').reduce((a,x)=>a+x.amount,0).toFixed(0)}`);
   set('sMat',`$${we.filter(e=>e.type==='matches').reduce((a,x)=>a+x.amount,0).toFixed(0)}`);
   const list=document.getElementById('sessList');
-  if(!ts.length){ list.innerHTML=`<div class="empty">🎾<br>No sessions logged today.<br>Tap Log Session to start.</div>`; return; }
-  list.innerHTML=ts.map(s=>{
+  if(!ts.length&&!te.length){ list.innerHTML=`<div class="empty">🎾<br>No sessions logged today.<br>Tap Log Session to start.</div>`; return; }
+  const sessHtml=ts.map(s=>{
     const i=S.sessions.indexOf(s); const cl=s.cl?.filter(Boolean).join(', ');
     return`<div class="si"><div class="si-left"><div class="si-type">${s.desc}</div><div class="si-meta">${s.type}${s.dur?` · ${s.dur}min`:''} · ${s.p||1} player${(s.p||1)>1?'s':''}</div>${cl?`<div class="si-clients">👤 ${cl}</div>`:''} ${s.notes?`<div class="si-note">📝 ${s.notes}</div>`:''}</div><div class="si-right"><div class="si-amt">$${fmt(s.amount)}</div><button class="si-del" onclick="delS(${i})">✕</button></div></div>`;
   }).join('');
+  const extraHtml=te.map(e=>`<div class="si"><div class="si-left"><div class="si-type">${e.type==='tips'?'Tips':'Match $'}</div><div class="si-meta">${e.type}</div></div><div class="si-right"><div class="si-amt" style="color:var(--gold)">$${fmt(e.amount)}</div><button class="si-del" data-del-extra="${e.id}">✕</button></div></div>`).join('');
+  list.innerHTML=sessHtml+extraHtml;
 }
 
 function renderWeekly(){
@@ -738,7 +749,9 @@ function renderWeekly(){
   document.getElementById('dailyList').innerHTML=wd.map((date,i)=>{
     const ds=S.sessions.filter(s=>s.date===date); const de=S.extras.filter(e=>e.date===date);
     const dt=ds.reduce((a,x)=>a+x.amount,0)+de.reduce((a,x)=>a+x.amount,0);
-    return`<div class="dr"><div class="dr-l">${days[i]}, ${fmtD(date)}<div class="dr-sub">${ds.length} session${ds.length!==1?'s':''}</div></div><div class="dr-amt ${dt===0?'z':''}">$${dt.toFixed(0)}</div></div>`;
+    const dateLabel=new Date(date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'});
+    const extrasHtml=de.map(e=>`<div class="si" style="margin-top:4px;"><div class="si-left"><div class="si-type" style="font-size:12px;">${e.type==='tips'?'Tips':'Match $'}</div></div><div class="si-right"><div class="si-amt" style="color:var(--gold);font-size:17px;">$${fmt(e.amount)}</div><button class="si-del" data-del-extra="${e.id}">✕</button></div></div>`).join('');
+    return`<div class="dr"><div class="dr-l">${days[i]}, ${dateLabel}<div class="dr-sub">${ds.length} session${ds.length!==1?'s':''}</div></div><div class="dr-amt ${dt===0?'z':''}">$${dt.toFixed(0)}</div></div>${extrasHtml}`;
   }).join('');
 }
 
@@ -801,7 +814,7 @@ function updFL(){
   document.getElementById('fPlay').style.display=(t==='event'||t==='other')?'none':'block';
   const a=document.getElementById('mAmt'); const auto=t==='private'||t==='clinic';
   a.readOnly=auto; a.style.opacity=auto?'0.6':'1'; if(auto) a.value='';
-  if(t==='event'||t==='other'){ F.players=null; document.getElementById('fClients').style.display='none'; }
+  if(t==='event'||t==='other'){ F.players=null; document.getElementById('fPlay').querySelectorAll('.bopt').forEach(b=>b.classList.remove('sel')); document.getElementById('fClients').style.display='none'; }
   calcP();
 }
 function updCL(){
@@ -813,7 +826,7 @@ function calcP(){
   const t=F.type; let p=null;
   if(t==='private'||t==='clinic'){ p=price(t,F.duration,F.players); if(p!==null) document.getElementById('mAmt').value=p; }
   else p=parseFloat(document.getElementById('mAmt').value)||null;
-  const desc=document.getElementById('mDesc').value.trim(); const ok=p!==null&&p>0&&desc.length>0;
+  const desc=document.getElementById('mDesc').value.trim(); const ok=F.type!==null&&p!==null&&p>0&&desc.length>0;
   set('ppV',p&&p>0?`$${fmt(p)}`:'—'); document.getElementById('mSub').disabled=!ok;
 }
 function openSess(){
@@ -823,11 +836,11 @@ function openSess(){
   document.getElementById('mDate').value=todayStr();
   document.getElementById('mNotes').value=''; document.getElementById('mAmt').value=''; document.getElementById('mDesc').value='';
   document.getElementById('mAmt').readOnly=false; document.getElementById('mAmt').style.opacity='1';
-  document.getElementById('fDur').style.display='none'; document.getElementById('fPlay').style.display='block'; document.getElementById('fClients').style.display='none';
+  document.getElementById('fDur').style.display='none'; document.getElementById('fPlay').style.display='none'; document.getElementById('fClients').style.display='none';
 }
 function submitSess(){
   const amt=parseFloat(document.getElementById('mAmt').value); const desc=document.getElementById('mDesc').value.trim();
-  if(!amt||!desc) return;
+  if(!amt||amt<=0||!desc) return;
   const date=document.getElementById('mDate').value||todayStr(); const notes=document.getElementById('mNotes').value.trim();
   const nP=parseInt(F.players)||1; const dur=F.type==='private'?parseInt(F.duration)||60:60;
   const cl=Array.from({length:nP},(_,i)=>document.getElementById(`cl${i}`)?.value.trim()||'').filter(Boolean);
@@ -835,6 +848,7 @@ function submitSess(){
   saveData(); renderAll(); go('vApp');
 }
 function delS(i){ S.sessions.splice(i,1); saveData(); renderAll(); }
+function delX(id){ S.extras=S.extras.filter(e=>e.id!==id); saveData(); renderAll(); }
 
 function openX(type){ xType=type; set('xTitle',type==='tips'?'Add Tips':'Add Match $'); document.getElementById('xAmt').value=''; document.getElementById('xDate').value=todayStr(); go('vXtra'); }
 function submitX(){ const val=parseFloat(document.getElementById('xAmt').value); const date=document.getElementById('xDate').value||todayStr(); if(!val||val<=0) return; S.extras.push({id:Date.now(),date,type:xType,amount:val}); saveData(); renderAll(); go('vApp'); }
@@ -856,6 +870,13 @@ function renderRatesSumm(){
     `Private 90min: ${[1,2,3,4].map(n=>`${n}p — $${r.p[90][n]}`).join(' · ')}<br>`+
     `Clinic: ${[1,2,3,4].map(n=>`${n}p — $${r.c[n]}`).join(' · ')}`;
 }
+function populateRatesEdit(){
+  [1,2,3,4].forEach(n=>{
+    document.getElementById(`e60_${n}`).value=S.rates.p[60][n];
+    document.getElementById(`e90_${n}`).value=S.rates.p[90][n];
+    document.getElementById(`ec_${n}`).value=S.rates.c[n];
+  });
+}
 
 function saveRatesEdit(){
   [1,2,3,4].forEach(n=>{
@@ -863,8 +884,21 @@ function saveRatesEdit(){
     const v90=parseFloat(document.getElementById(`e90_${n}`).value); if(v90>0) S.rates.p[90][n]=v90;
     const vc=parseFloat(document.getElementById(`ec_${n}`).value); if(vc>0) S.rates.c[n]=vc;
   });
-  saveData(); renderRatesSumm(); go('vApp'); goSc('settings',document.querySelectorAll('.nt')[4]);
+  saveData(); renderRatesSumm();
+  const b=document.querySelector('#vRatesEdit .vbtn.p');
+  b.textContent='SAVED ✓';
+  setTimeout(()=>{ b.textContent='SAVE RATES'; go('vApp'); goSc('settings',document.querySelectorAll('.nt')[4]); },800);
 }
+
+// ── EVENT DELEGATION: extra delete buttons ────────────────────────
+document.getElementById('sessList').addEventListener('click',function(ev){
+  const btn=ev.target.closest('[data-del-extra]');
+  if(btn) delX(parseInt(btn.dataset.delExtra));
+});
+document.getElementById('dailyList').addEventListener('click',function(ev){
+  const btn=ev.target.closest('[data-del-extra]');
+  if(btn) delX(parseInt(btn.dataset.delExtra));
+});
 
 // ── SERVICE WORKER ────────────────────────────────────────────────
 if('serviceWorker' in navigator){
