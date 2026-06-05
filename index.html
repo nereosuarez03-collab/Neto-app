@@ -144,8 +144,14 @@ input[type=date].finput{color-scheme:dark;}
 .si-note{font-size:10px;color:var(--purple);margin-top:2px;font-style:italic;}
 .si-right{display:flex;align-items:center;gap:5px;}
 .si-amt{font-family:'Bebas Neue',sans-serif;font-size:20px;color:var(--green);}
-.si-del{background:none;border:none;color:#333;cursor:pointer;font-size:14px;padding:2px 7px;}
+.si-del,.si-edit{background:none;border:none;color:#333;cursor:pointer;font-size:14px;padding:2px 7px;}
 .si-del:active{color:var(--red);}
+.si-edit:active{color:var(--blue);}
+.si-tag{display:inline-block;font-size:9px;font-weight:600;letter-spacing:.05em;border-radius:4px;padding:1px 5px;text-transform:uppercase;margin-right:2px;}
+.si-tag-private{background:rgba(27,108,168,.18);color:var(--blue);}
+.si-tag-clinic{background:rgba(245,200,66,.12);color:var(--gold);}
+.si-tag-event{background:rgba(139,92,246,.15);color:var(--purple);}
+.si-tag-other{background:#2A2A2A;color:var(--dim);}
 .empty{text-align:center;padding:32px 20px;color:var(--dim);font-size:13px;line-height:1.7;}
 
 /* WEEKLY */
@@ -532,7 +538,7 @@ function lsSet(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch{} }
 function lsDel(k){ try{ localStorage.removeItem(k); }catch{} }
 
 // ── STATE ────────────────────────────────────────────────────────
-let CU=null, pinBuf='', rPinBuf='', pendingU='', obUser=null, wkOff=0, xType=null;
+let CU=null, pinBuf='', rPinBuf='', pendingU='', obUser=null, wkOff=0, xType=null, editIdx=-1;
 let F={type:null,duration:null,players:null};
 let S={sessions:[],extras:[],goals:{weekly:2000,monthly:7000,summer:20000},rates:dR()};
 
@@ -705,6 +711,14 @@ function price(type,dur,p){
 }
 
 // ── RENDER ────────────────────────────────────────────────────────
+function fmtSessMeta(s){
+  const cap=t=>t.charAt(0).toUpperCase()+t.slice(1);
+  const parts=[];
+  if(s.type==='private'&&s.dur) parts.push(`${s.dur} min`);
+  if(s.type==='private'||s.type==='clinic') parts.push(`${s.p||1} player${(s.p||1)>1?'s':''}`);
+  return`<span class="si-tag si-tag-${s.type}">${cap(s.type)}</span>${parts.length?' · '+parts.join(' · '):''}`;
+}
+
 function renderAll(){ renderGoals(); renderToday(); renderWeekly(); renderProj(); set('todayLbl',fmtD(todayStr())); set('wkBadge',`WEEK ${getWkN()}`); }
 
 function renderGoals(){
@@ -731,7 +745,7 @@ function renderToday(){
   if(!ts.length&&!te.length){ list.innerHTML=`<div class="empty">🎾<br>No sessions logged today.<br>Tap Log Session to start.</div>`; return; }
   const sessHtml=ts.map(s=>{
     const i=S.sessions.indexOf(s); const cl=s.cl?.filter(Boolean).join(', ');
-    return`<div class="si"><div class="si-left"><div class="si-type">${s.desc}</div><div class="si-meta">${s.type}${s.dur?` · ${s.dur}min`:''} · ${s.p||1} player${(s.p||1)>1?'s':''}</div>${cl?`<div class="si-clients">👤 ${cl}</div>`:''} ${s.notes?`<div class="si-note">📝 ${s.notes}</div>`:''}</div><div class="si-right"><div class="si-amt">$${fmt(s.amount)}</div><button class="si-del" onclick="delS(${i})">✕</button></div></div>`;
+    return`<div class="si"><div class="si-left"><div class="si-type">${s.desc}</div><div class="si-meta">${fmtSessMeta(s)}</div>${cl?`<div class="si-clients">👤 ${cl}</div>`:''} ${s.notes?`<div class="si-note">📝 ${s.notes}</div>`:''}</div><div class="si-right"><div class="si-amt">$${fmt(s.amount)}</div><button class="si-edit" onclick="editSess(${i})">✏️</button><button class="si-del" onclick="delS(${i})">✕</button></div></div>`;
   }).join('');
   const extraHtml=te.map(e=>`<div class="si"><div class="si-left"><div class="si-type">${e.type==='tips'?'Tips':'Match $'}</div><div class="si-meta">${e.type}</div></div><div class="si-right"><div class="si-amt" style="color:var(--gold)">$${fmt(e.amount)}</div><button class="si-del" data-del-extra="${e.id}">✕</button></div></div>`).join('');
   list.innerHTML=sessHtml+extraHtml;
@@ -830,6 +844,9 @@ function calcP(){
   set('ppV',p&&p>0?`$${fmt(p)}`:'—'); document.getElementById('mSub').disabled=!ok;
 }
 function openSess(){
+  editIdx=-1;
+  document.querySelector('#vSess .vtitle').textContent='Log Session';
+  document.getElementById('mSub').textContent='SAVE SESSION';
   F={type:null,duration:null,players:null};
   document.querySelectorAll('#vSess .bopt').forEach(b=>b.classList.remove('sel'));
   set('ppV','—'); document.getElementById('mSub').disabled=true;
@@ -844,8 +861,36 @@ function submitSess(){
   const date=document.getElementById('mDate').value||todayStr(); const notes=document.getElementById('mNotes').value.trim();
   const nP=parseInt(F.players)||1; const dur=F.type==='private'?parseInt(F.duration)||60:60;
   const cl=Array.from({length:nP},(_,i)=>document.getElementById(`cl${i}`)?.value.trim()||'').filter(Boolean);
-  S.sessions.push({id:Date.now(),date,type:F.type||'other',dur,p:nP,desc,amount:amt,notes:notes||null,cl:cl.length?cl:null});
-  saveData(); renderAll(); go('vApp');
+  const sess={id:editIdx>=0?S.sessions[editIdx].id:Date.now(),date,type:F.type||'other',dur,p:nP,desc,amount:amt,notes:notes||null,cl:cl.length?cl:null};
+  if(editIdx>=0) S.sessions[editIdx]=sess; else S.sessions.push(sess);
+  editIdx=-1; saveData(); renderAll(); go('vApp');
+}
+function editSess(i){
+  const s=S.sessions[i]; if(!s) return;
+  editIdx=i;
+  F={type:s.type, duration:s.type==='private'?String(s.dur):null, players:(s.type!=='event'&&s.type!=='other')?String(s.p||1):null};
+  document.querySelectorAll('#vSess .bopt').forEach(b=>{
+    b.classList.remove('sel');
+    const oc=b.getAttribute('onclick')||'';
+    if(oc.includes(`'type','${s.type}'`)) b.classList.add('sel');
+    if(s.type==='private'&&oc.includes(`'duration','${s.dur}'`)) b.classList.add('sel');
+    if(F.players&&oc.includes(`'players','${s.p}'`)) b.classList.add('sel');
+  });
+  document.getElementById('mDate').value=s.date;
+  document.getElementById('mDesc').value=s.desc;
+  document.getElementById('mNotes').value=s.notes||'';
+  document.getElementById('fDur').style.display=s.type==='private'?'block':'none';
+  document.getElementById('fPlay').style.display=(s.type==='event'||s.type==='other')?'none':'block';
+  const auto=s.type==='private'||s.type==='clinic';
+  document.getElementById('mAmt').readOnly=auto; document.getElementById('mAmt').style.opacity=auto?'0.6':'1';
+  document.getElementById('mAmt').value=s.amount;
+  if(F.players&&parseInt(F.players)>0){ updCL(); if(s.cl){ s.cl.forEach((n,idx)=>{ const el=document.getElementById(`cl${idx}`); if(el) el.value=n; }); } }
+  else document.getElementById('fClients').style.display='none';
+  set('ppV',`$${fmt(s.amount)}`);
+  document.getElementById('mSub').disabled=false;
+  document.querySelector('#vSess .vtitle').textContent='Edit Session';
+  document.getElementById('mSub').textContent='UPDATE SESSION';
+  go('vSess');
 }
 function delS(i){ S.sessions.splice(i,1); saveData(); renderAll(); }
 function delX(id){ S.extras=S.extras.filter(e=>e.id!==id); saveData(); renderAll(); }
