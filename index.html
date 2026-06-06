@@ -169,6 +169,13 @@ input[type=date].finput{color-scheme:dark;}
 .dr-sub{font-size:10px;color:var(--dim);margin-top:1px;}
 .dr-amt{font-family:'Bebas Neue',sans-serif;font-size:19px;color:var(--green);}
 .dr-amt.z{color:#333;}
+/* WEEKLY accordion */
+.dr{cursor:pointer;}
+.dr-wrap{margin-bottom:6px;}
+.dr-wrap .dr{margin-bottom:0;}
+.dr.open{border-color:var(--blue);border-radius:10px 10px 0 0;border-bottom:none;}
+.dr-chev{font-size:11px;color:var(--dim);}
+.day-detail{background:#111;border:1px solid var(--blue);border-top:none;border-radius:0 0 10px 10px;padding:8px;}
 
 /* GOALS / PROJECTION */
 .pc{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:13px;margin-bottom:10px;}
@@ -361,6 +368,7 @@ input[type=date].finput{color-scheme:dark;}
       </div>
       <div class="gc-p">
         <div class="gc-row"><div><div class="gc-lbl">Summer goal</div><div style="display:flex;align-items:baseline;gap:4px;"><span class="gc-amt" id="gSA">$0</span><span class="gc-of" id="gSOF">of $20,000</span></div></div><div class="gc-pct" id="gSP">0%</div></div>
+        <div id="gSE" style="font-size:10px;color:rgba(255,255,255,.5);margin-top:3px;min-height:14px;"></div>
         <div class="bar"><div class="bf" id="gSB" style="width:0%;background:var(--gold)"></div></div>
       </div>
       <div class="gc-2">
@@ -369,7 +377,7 @@ input[type=date].finput{color-scheme:dark;}
       </div>
       <div class="sg">
         <div class="sc-card hl"><div class="sc-lbl">Today</div><div class="sc-val" id="sT">$0</div><div class="sc-sub" id="sTN">0 sessions</div></div>
-        <div class="sc-card"><div class="sc-lbl">This week</div><div class="sc-val" id="sW">$0</div><div class="sc-sub" id="sWN">0 sessions</div></div>
+        <div class="sc-card"><div class="sc-lbl">This week</div><div class="sc-val" id="sW">$0</div><div class="sc-sub" id="sWN">0 sessions</div><div id="sWE" class="sc-sub" style="color:var(--gold);display:none;"></div></div>
         <div class="sc-card"><div class="sc-lbl">Tips</div><div class="sc-val" id="sTip" style="color:var(--gold)">$0</div><div class="sc-sub">this week</div></div>
         <div class="sc-card"><div class="sc-lbl">Matches</div><div class="sc-val" id="sMat" style="color:var(--gold)">$0</div><div class="sc-sub">this week</div></div>
       </div>
@@ -463,7 +471,7 @@ input[type=date].finput{color-scheme:dark;}
         <p style="font-size:12px;color:var(--dim);margin-bottom:11px;">Signed in as <span id="settUser" style="color:var(--chalk);font-weight:500;"></span></p>
         <button class="vbtn d" onclick="toggleSO()">SIGN OUT</button>
       </div>
-      <div class="ver">NetO v3.1</div>
+      <div class="ver">NetO v3.2</div>
     </div>
 
   </div>
@@ -538,7 +546,7 @@ function lsSet(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch{} }
 function lsDel(k){ try{ localStorage.removeItem(k); }catch{} }
 
 // ── STATE ────────────────────────────────────────────────────────
-let CU=null, pinBuf='', rPinBuf='', pendingU='', obUser=null, wkOff=0, xType=null, editIdx=-1;
+let CU=null, pinBuf='', rPinBuf='', pendingU='', obUser=null, wkOff=0, xType=null, editIdx=-1, expandedDay=null;
 let F={type:null,duration:null,players:null};
 let S={sessions:[],extras:[],goals:{weekly:2000,monthly:7000,summer:20000},rates:dR()};
 
@@ -723,10 +731,12 @@ function renderAll(){ renderGoals(); renderToday(); renderWeekly(); renderProj()
 
 function renderGoals(){
   const tot=total(); const wd=getWD(0),md=getMD();
+  const sTot=S.sessions.reduce((a,x)=>a+x.amount,0); const eTot=tot-sTot;
   const wt=S.sessions.filter(s=>wd.includes(s.date)).reduce((a,x)=>a+x.amount,0)+S.extras.filter(e=>wd.includes(e.date)).reduce((a,x)=>a+x.amount,0);
   const mt=S.sessions.filter(s=>md.includes(s.date)).reduce((a,x)=>a+x.amount,0)+S.extras.filter(e=>md.includes(e.date)).reduce((a,x)=>a+x.amount,0);
   const sg=S.goals.summer||20000,wg=S.goals.weekly||2000,mg=S.goals.monthly||7000;
-  set('gSA',`$${tot.toLocaleString('en-US',{maximumFractionDigits:0})}`); set('gSOF',`of $${sg.toLocaleString()}`); set('gSP',`${Math.round(Math.min(100,tot/sg*100))}%`); document.getElementById('gSB').style.width=Math.min(100,tot/sg*100)+'%';
+  set('gSA',`$${sTot.toLocaleString('en-US',{maximumFractionDigits:0})}`); set('gSOF',`of $${sg.toLocaleString()}`); set('gSP',`${Math.round(Math.min(100,tot/sg*100))}%`); document.getElementById('gSB').style.width=Math.min(100,tot/sg*100)+'%';
+  const gSE=document.getElementById('gSE'); if(gSE) gSE.textContent=eTot>0?`+ $${eTot.toLocaleString('en-US',{maximumFractionDigits:0})} tips/matches`:'';
   set('gWA',`$${wt.toFixed(0)}`); set('gWOF',`of $${wg.toLocaleString()}`); document.getElementById('gWB').style.width=Math.min(100,wt/wg*100)+'%';
   set('gMA',`$${mt.toFixed(0)}`); set('gMOF',`of $${mg.toLocaleString()}`); document.getElementById('gMB').style.width=Math.min(100,mt/mg*100)+'%';
 }
@@ -736,9 +746,10 @@ function renderToday(){
   const ts=S.sessions.filter(s=>s.date===td); const te=S.extras.filter(e=>e.date===td);
   const tt=ts.reduce((a,x)=>a+x.amount,0)+te.reduce((a,x)=>a+x.amount,0);
   const wd=getWD(0); const ws=S.sessions.filter(s=>wd.includes(s.date)); const we=S.extras.filter(e=>wd.includes(e.date));
-  const wt=ws.reduce((a,x)=>a+x.amount,0)+we.reduce((a,x)=>a+x.amount,0);
+  const wSess=ws.reduce((a,x)=>a+x.amount,0); const wExt=we.reduce((a,x)=>a+x.amount,0);
   set('sT',`$${tt.toFixed(0)}`); set('sTN',`${ts.length} session${ts.length!==1?'s':''}`);
-  set('sW',`$${wt.toFixed(0)}`); set('sWN',`${ws.length} session${ws.length!==1?'s':''}`);
+  set('sW',`$${wSess.toFixed(0)}`); set('sWN',`${ws.length} session${ws.length!==1?'s':''}`);
+  const sWE=document.getElementById('sWE'); if(sWE&&wExt>0){sWE.textContent=`+ $${wExt.toFixed(0)} tips/matches`;sWE.style.display='';}else if(sWE){sWE.style.display='none';}
   set('sTip',`$${we.filter(e=>e.type==='tips').reduce((a,x)=>a+x.amount,0).toFixed(0)}`);
   set('sMat',`$${we.filter(e=>e.type==='matches').reduce((a,x)=>a+x.amount,0).toFixed(0)}`);
   const list=document.getElementById('sessList');
@@ -764,10 +775,21 @@ function renderWeekly(){
     const ds=S.sessions.filter(s=>s.date===date); const de=S.extras.filter(e=>e.date===date);
     const dt=ds.reduce((a,x)=>a+x.amount,0)+de.reduce((a,x)=>a+x.amount,0);
     const dateLabel=new Date(date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'});
-    const extrasHtml=de.map(e=>`<div class="si" style="margin-top:4px;"><div class="si-left"><div class="si-type" style="font-size:12px;">${e.type==='tips'?'Tips':'Match $'}</div></div><div class="si-right"><div class="si-amt" style="color:var(--gold);font-size:17px;">$${fmt(e.amount)}</div><button class="si-del" data-del-extra="${e.id}">✕</button></div></div>`).join('');
-    return`<div class="dr"><div class="dr-l">${days[i]}, ${dateLabel}<div class="dr-sub">${ds.length} session${ds.length!==1?'s':''}</div></div><div class="dr-amt ${dt===0?'z':''}">$${dt.toFixed(0)}</div></div>${extrasHtml}`;
+    const isOpen=expandedDay===date;
+    let detailHtml='';
+    if(isOpen){
+      const sessItems=ds.map(s=>{
+        const gi=S.sessions.indexOf(s); const cl=s.cl?.filter(Boolean).join(', ');
+        return`<div class="si"><div class="si-left"><div class="si-type">${s.desc}</div><div class="si-meta">${fmtSessMeta(s)}</div>${cl?`<div class="si-clients">👤 ${cl}</div>`:''} ${s.notes?`<div class="si-note">📝 ${s.notes}</div>`:''}</div><div class="si-right"><div class="si-amt">$${fmt(s.amount)}</div><button class="si-edit" onclick="editSess(${gi})">✏️</button><button class="si-del" onclick="delS(${gi})">✕</button></div></div>`;
+      }).join('');
+      const extraItems=de.map(e=>`<div class="si"><div class="si-left"><div class="si-type">${e.type==='tips'?'💰 Tips':'🎾 Match $'}</div></div><div class="si-right"><div class="si-amt" style="color:var(--gold)">$${fmt(e.amount)}</div><button class="si-del" data-del-extra="${e.id}">✕</button></div></div>`).join('');
+      const emptyMsg=!ds.length&&!de.length?`<div style="color:var(--dim);font-size:12px;text-align:center;padding:8px;">Nothing logged</div>`:'';
+      detailHtml=`<div class="day-detail">${emptyMsg}${sessItems}${extraItems}</div>`;
+    }
+    return`<div class="dr-wrap"><div class="dr${isOpen?' open':''}" data-date="${date}"><div class="dr-l">${days[i]}, ${dateLabel}<div class="dr-sub">${ds.length} session${ds.length!==1?'s':''}</div></div><div style="display:flex;align-items:center;gap:6px;"><span class="dr-amt ${dt===0?'z':''}">$${dt.toFixed(0)}</span><span class="dr-chev">${isOpen?'▾':'▸'}</span></div></div>${detailHtml}</div>`;
   }).join('');
 }
+function toggleDayDetail(date){ expandedDay=expandedDay===date?null:date; renderWeekly(); }
 
 function renderProj(){
   const tot=total();
@@ -898,7 +920,7 @@ function delX(id){ S.extras=S.extras.filter(e=>e.id!==id); saveData(); renderAll
 function openX(type){ xType=type; set('xTitle',type==='tips'?'Add Tips':'Add Match $'); document.getElementById('xAmt').value=''; document.getElementById('xDate').value=todayStr(); go('vXtra'); }
 function submitX(){ const val=parseFloat(document.getElementById('xAmt').value); const date=document.getElementById('xDate').value||todayStr(); if(!val||val<=0) return; S.extras.push({id:Date.now(),date,type:xType,amount:val}); saveData(); renderAll(); go('vApp'); }
 
-function chWk(d){ wkOff+=d; renderWeekly(); }
+function chWk(d){ wkOff+=d; expandedDay=null; renderWeekly(); }
 
 function saveGoals(){
   S.goals.weekly=parseFloat(document.getElementById('sWk').value)||2000;
@@ -941,8 +963,10 @@ document.getElementById('sessList').addEventListener('click',function(ev){
   if(btn) delX(parseInt(btn.dataset.delExtra));
 });
 document.getElementById('dailyList').addEventListener('click',function(ev){
-  const btn=ev.target.closest('[data-del-extra]');
-  if(btn) delX(parseInt(btn.dataset.delExtra));
+  const delBtn=ev.target.closest('[data-del-extra]');
+  if(delBtn){ delX(parseInt(delBtn.dataset.delExtra)); return; }
+  const dr=ev.target.closest('.dr[data-date]');
+  if(dr) toggleDayDetail(dr.dataset.date);
 });
 
 // ── SERVICE WORKER ────────────────────────────────────────────────
