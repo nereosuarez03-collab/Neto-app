@@ -473,7 +473,7 @@ input[type=date].finput{color-scheme:dark;}
         <p style="font-size:12px;color:var(--dim);margin-bottom:11px;">Signed in as <span id="settUser" style="color:var(--chalk);font-weight:500;"></span></p>
         <button class="vbtn d" onclick="toggleSO()">SIGN OUT</button>
       </div>
-      <div class="ver">NetO v3.3</div>
+      <div class="ver">NetO v3.4</div>
     </div>
 
   </div>
@@ -519,6 +519,7 @@ input[type=date].finput{color-scheme:dark;}
     <div class="fg" id="fPlay" style="display:none"><label class="flabel">Players</label><div class="bopts"><div class="bopt" onclick="selF(this,'players','1')">1</div><div class="bopt" onclick="selF(this,'players','2')">2</div><div class="bopt" onclick="selF(this,'players','3')">3</div><div class="bopt" onclick="selF(this,'players','4')">4</div></div></div>
     <div class="fg"><label class="flabel">Description</label><input type="text" class="finput" id="mDesc" placeholder="e.g. Advanced clinic, Beginner group..." oninput="descUserEdited=true;calcP()"></div>
     <div class="fg"><label class="flabel">Amount ($)</label><input type="number" class="finput" id="mAmt" placeholder="0" min="0" inputmode="decimal" oninput="calcP()"></div>
+    <div id="mAmtHint" style="display:none;font-size:10px;color:var(--dim);margin-top:-8px;margin-bottom:10px;padding-left:2px;">Auto-filled from your rates — tap to override</div>
     <div class="fg" id="fClients" style="display:none"><label class="flabel">Client names — optional</label><div class="cf" id="clientFields"></div></div>
     <div class="fg"><label class="flabel">Notes — optional</label><input type="text" class="finput" id="mNotes" placeholder="e.g. New client, wants Tue/Thu"></div>
     <div class="pp"><div class="pp-lbl">Session amount</div><div class="pp-val" id="ppV">—</div></div>
@@ -554,7 +555,7 @@ function lsSet(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch{} }
 function lsDel(k){ try{ localStorage.removeItem(k); }catch{} }
 
 // ── STATE ────────────────────────────────────────────────────────
-let CU=null, pinBuf='', rPinBuf='', pendingU='', obUser=null, wkOff=0, xType=null, editSessId=null, expandedDay=null, descUserEdited=false, undoSession=null, undoIdx=null, undoTimer=null;
+let CU=null, pinBuf='', rPinBuf='', pendingU='', obUser=null, wkOff=0, xType=null, editSessId=null, expandedDay=null, descUserEdited=false, undoSession=null, undoIdx=null, undoTimer=null, pinAttempts=0, pinLockUntil=0;
 let F={type:null,duration:null,players:null};
 let S={sessions:[],extras:[],goals:{weekly:2000,monthly:7000,summer:20000},rates:dR()};
 
@@ -562,6 +563,8 @@ function dR(){ return{p:{60:{1:55,2:65,3:75,4:85},90:{1:82.5,2:97.5,3:112.5,4:12
 function dG(){ return{weekly:2000,monthly:7000,summer:20000,summerStart:null,summerEnd:null}; }
 function set(id,v){ const e=document.getElementById(id); if(e) e.textContent=v; }
 function fmt(n){ return n%1===0?String(n):n.toFixed(2); }
+function esc(s){ if(!s) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;'); }
+async function hashPin(pin){ const d=new TextEncoder().encode(pin+'neto-salt-2026'); const b=await crypto.subtle.digest('SHA-256',d); return Array.from(new Uint8Array(b)).map(x=>x.toString(16).padStart(2,'0')).join(''); }
 
 // ── NAVIGATION ───────────────────────────────────────────────────
 function go(id){
@@ -623,41 +626,68 @@ function renderProfiles(){
   if(!profiles.length){ list.innerHTML=''; none.style.display='block'; return; }
   none.style.display='none';
   list.innerHTML = profiles.map(p=>`
-    <div class="prof-item" onclick="selP('${p.u}')">
-      <div class="prof-av">${p.u[0].toUpperCase()}</div>
-      <div><div class="prof-name">${p.u}</div><div class="prof-sport">${p.sp||'Coach'}</div></div>
+    <div class="prof-item" data-username="${esc(p.u)}">
+      <div class="prof-av">${esc(p.u[0].toUpperCase())}</div>
+      <div><div class="prof-name">${esc(p.u)}</div><div class="prof-sport">${esc(p.sp||'Coach')}</div></div>
     </div>`).join('');
 }
 
-function selP(u){ pendingU=u; document.getElementById('pinTitle').textContent=`Welcome back, ${u}`; pinBuf=''; updPin(); document.getElementById('pinErr').textContent=''; go('vPin'); }
+function selP(u){ pendingU=u; document.getElementById('pinTitle').textContent=`Welcome back, ${u}`; pinBuf=''; updPin(); const locked=Date.now()<pinLockUntil; setPinKeypadEnabled(!locked); if(locked) showPinLockErr(); else document.getElementById('pinErr').textContent=''; go('vPin'); }
 
-function pk(k){ if(pinBuf.length>=4) return; pinBuf+=k; updPin(); if(pinBuf.length===4) setTimeout(checkPin,120); }
+function pk(k){ if(Date.now()<pinLockUntil) return; if(pinBuf.length>=4) return; pinBuf+=k; updPin(); if(pinBuf.length===4) setTimeout(checkPin,120); }
 function pkDel(){ pinBuf=pinBuf.slice(0,-1); updPin(); }
 function updPin(){ for(let i=0;i<4;i++){const d=document.getElementById(`pd${i}`);if(i<pinBuf.length){d.textContent='●';d.classList.add('on');}else{d.textContent='—';d.classList.remove('on');}} }
 
-function checkPin(){
-  const profiles = lsGet(KP)||[];
-  const user = profiles.find(p=>p.u===pendingU);
-  if(user && user.pin===pinBuf){
+async function checkPin(){
+  if(Date.now()<pinLockUntil){ showPinLockErr(); return; }
+  const profiles=lsGet(KP)||[];
+  const user=profiles.find(p=>p.u===pendingU);
+  if(user&&user.pin.length===4){
+    // migrate plaintext PIN to hashed
+    user.pin=await hashPin(user.pin);
+    const ap=lsGet(KP)||[]; const mi=ap.findIndex(p=>p.u===user.u);
+    if(mi>=0){ ap[mi].pin=user.pin; lsSet(KP,ap); }
+  }
+  const hashed=await hashPin(pinBuf);
+  if(user&&user.pin===hashed){
+    pinAttempts=0;
     CU=user; loadData(); lsSet(KS,{u:CU.u}); launch();
   } else {
-    document.getElementById('pinErr').textContent='Incorrect PIN. Try again.';
+    pinAttempts++;
     pinBuf=''; updPin();
+    if(pinAttempts>=5){
+      pinLockUntil=Date.now()+30000;
+      setPinKeypadEnabled(false);
+      startPinLockCountdown();
+    } else {
+      const left=5-pinAttempts;
+      document.getElementById('pinErr').textContent=`Incorrect PIN. ${left} attempt${left!==1?'s':''} left.`;
+    }
   }
 }
+function showPinLockErr(){ const rem=Math.ceil((pinLockUntil-Date.now())/1000); document.getElementById('pinErr').textContent=`Too many attempts. Try again in ${rem}s`; }
+function startPinLockCountdown(){
+  showPinLockErr();
+  const iv=setInterval(()=>{
+    if(Date.now()>=pinLockUntil){ clearInterval(iv); pinAttempts=0; pinLockUntil=0; setPinKeypadEnabled(true); document.getElementById('pinErr').textContent=''; }
+    else showPinLockErr();
+  },1000);
+}
+function setPinKeypadEnabled(on){ const pad=document.querySelector('#vPin .pin-pad'); if(pad){ pad.style.opacity=on?'1':'0.3'; pad.style.pointerEvents=on?'':'none'; } }
 
 function rpk(k){ if(rPinBuf.length>=4) return; rPinBuf+=k; updRPin(); chkReg(); }
 function rpkDel(){ rPinBuf=rPinBuf.slice(0,-1); updRPin(); chkReg(); }
 function updRPin(){ for(let i=0;i<4;i++){const d=document.getElementById(`rpd${i}`);if(i<rPinBuf.length){d.textContent='●';d.classList.add('on');}else{d.textContent='—';d.classList.remove('on');}} }
 function chkReg(){ document.getElementById('rSubmit').disabled=!(document.getElementById('rName').value.trim()&&rPinBuf.length===4); }
 
-function doReg(){
+async function doReg(){
   const name=document.getElementById('rName').value.trim();
   const sport=document.getElementById('rSport').value.trim();
   if(!name||rPinBuf.length!==4) return;
   const profiles=lsGet(KP)||[];
   if(profiles.find(p=>p.u.toLowerCase()===name.toLowerCase())){ document.getElementById('rErr').textContent='Name already taken.'; return; }
-  obUser={u:name,sp:sport||'Coach',pin:rPinBuf,ca:new Date().toISOString().split('T')[0]};
+  const hashedPin=await hashPin(rPinBuf);
+  obUser={u:name,sp:sport||'Coach',pin:hashedPin,ca:new Date().toISOString().split('T')[0]};
   S={sessions:[],extras:[],goals:dG(),rates:dR()};
   go('vRates');
 }
@@ -793,8 +823,8 @@ function renderToday(){
   const list=document.getElementById('sessList');
   if(!ts.length&&!te.length){ list.innerHTML=`<div class="empty">🎾<br>No sessions logged today.<br>Tap Log Session to start.</div>`; return; }
   const sessHtml=ts.map(s=>{
-    const cl=s.cl?.filter(Boolean).join(', ');
-    return`<div class="si"><div class="si-left"><div class="si-type">${s.desc}</div><div class="si-meta">${fmtSessMeta(s)}</div>${cl?`<div class="si-clients">👤 ${cl}</div>`:''} ${s.notes?`<div class="si-note">📝 ${s.notes}</div>`:''}</div><div class="si-right"><div class="si-amt">$${fmt(s.amount)}</div><button class="si-edit" onclick="editSess(${s.id})">✏️</button><button class="si-del" onclick="delS(${s.id})">✕</button></div></div>`;
+    const cl=s.cl?.filter(Boolean).map(esc).join(', ');
+    return`<div class="si"><div class="si-left"><div class="si-type">${esc(s.desc)}</div><div class="si-meta">${fmtSessMeta(s)}</div>${cl?`<div class="si-clients">👤 ${cl}</div>`:''} ${s.notes?`<div class="si-note">📝 ${esc(s.notes)}</div>`:''}</div><div class="si-right"><div class="si-amt">$${fmt(s.amount)}</div><button class="si-edit" onclick="editSess(${s.id})">✏️</button><button class="si-del" onclick="delS(${s.id})">✕</button></div></div>`;
   }).join('');
   const extraHtml=te.map(e=>`<div class="si"><div class="si-left"><div class="si-type">${e.type==='tips'?'Tips':'Match $'}</div><div class="si-meta">${e.type}</div></div><div class="si-right"><div class="si-amt" style="color:var(--gold)">$${fmt(e.amount)}</div><button class="si-del" data-del-extra="${e.id}">✕</button></div></div>`).join('');
   list.innerHTML=sessHtml+extraHtml;
@@ -817,8 +847,8 @@ function renderWeekly(){
     let detailHtml='';
     if(isOpen){
       const sessItems=ds.map(s=>{
-        const cl=s.cl?.filter(Boolean).join(', ');
-        return`<div class="si"><div class="si-left"><div class="si-type">${s.desc}</div><div class="si-meta">${fmtSessMeta(s)}</div>${cl?`<div class="si-clients">👤 ${cl}</div>`:''} ${s.notes?`<div class="si-note">📝 ${s.notes}</div>`:''}</div><div class="si-right"><div class="si-amt">$${fmt(s.amount)}</div><button class="si-edit" onclick="editSess(${s.id})">✏️</button><button class="si-del" onclick="delS(${s.id})">✕</button></div></div>`;
+        const cl=s.cl?.filter(Boolean).map(esc).join(', ');
+        return`<div class="si"><div class="si-left"><div class="si-type">${esc(s.desc)}</div><div class="si-meta">${fmtSessMeta(s)}</div>${cl?`<div class="si-clients">👤 ${cl}</div>`:''} ${s.notes?`<div class="si-note">📝 ${esc(s.notes)}</div>`:''}</div><div class="si-right"><div class="si-amt">$${fmt(s.amount)}</div><button class="si-edit" onclick="editSess(${s.id})">✏️</button><button class="si-del" onclick="delS(${s.id})">✕</button></div></div>`;
       }).join('');
       const extraItems=de.map(e=>`<div class="si"><div class="si-left"><div class="si-type">${e.type==='tips'?'💰 Tips':'🎾 Match $'}</div></div><div class="si-right"><div class="si-amt" style="color:var(--gold)">$${fmt(e.amount)}</div><button class="si-del" data-del-extra="${e.id}">✕</button></div></div>`).join('');
       const emptyMsg=!ds.length&&!de.length?`<div style="color:var(--dim);font-size:12px;text-align:center;padding:8px;">Nothing logged</div>`:'';
@@ -841,7 +871,7 @@ function renderProj(){
   if(dE.length){ const b=dE.sort((a,c)=>c[1]-a[1])[0],ad=dE.reduce((a,d)=>a+d[1],0)/dE.length; set('pBest',`$${b[1].toFixed(0)}`); set('pBestD',fmtD(b[0])); set('pAvgD',`$${ad.toFixed(0)}`); }
   const ts={}; S.sessions.forEach(s=>{if(!ts[s.desc])ts[s.desc]={t:0,h:0};ts[s.desc].t+=s.amount;ts[s.desc].h+=(s.dur||60)/60;});
   const eff=Object.entries(ts).sort((a,b)=>(b[1].t/b[1].h)-(a[1].t/a[1].h));
-  document.getElementById('effList').innerHTML=eff.length?eff.map(([n,v])=>`<div class="eff-row"><span style="color:var(--dim)">${n}</span><span style="color:var(--green);font-family:'DM Mono',monospace;font-size:12px">$${(v.t/v.h).toFixed(0)}/hr</span></div>`).join(''):`<div style="color:var(--dim);font-size:13px;text-align:center;padding:10px;">Log sessions to see $/hr</div>`;
+  document.getElementById('effList').innerHTML=eff.length?eff.map(([n,v])=>`<div class="eff-row"><span style="color:var(--dim)">${esc(n)}</span><span style="color:var(--green);font-family:'DM Mono',monospace;font-size:12px">$${(v.t/v.h).toFixed(0)}/hr</span></div>`).join(''):`<div style="color:var(--dim);font-size:13px;text-align:center;padding:10px;">Log sessions to see $/hr</div>`;
 }
 
 function populateRpt(){
@@ -871,7 +901,7 @@ function renderReport(){
   set('rSS',wS.length); set('rHR',`${hrs.toFixed(1)}h`); const eR=hrs>0?wT/hrs:0; set('rDH',eR>0?`$${eR.toFixed(0)}/hr`:'—');
   const ts={}; wS.forEach(s=>{if(!ts[s.desc])ts[s.desc]={t:0,h:0,c:0};ts[s.desc].t+=s.amount;ts[s.desc].h+=(s.dur||60)/60;ts[s.desc].c++;});
   const eff=Object.entries(ts).sort((a,b)=>(b[1].t/b[1].h)-(a[1].t/a[1].h));
-  document.getElementById('rEff').innerHTML=eff.length?eff.map(([n,v])=>`<div class="eff-row"><span style="color:var(--dim)">${n} <span style="color:#444">(${v.c}x)</span></span><span style="color:var(--green);font-family:'DM Mono',monospace;font-size:12px">$${(v.t/v.h).toFixed(0)}/hr</span></div>`).join(''):`<div style="color:var(--dim);font-size:12px;text-align:center;padding:8px;">No sessions</div>`;
+  document.getElementById('rEff').innerHTML=eff.length?eff.map(([n,v])=>`<div class="eff-row"><span style="color:var(--dim)">${esc(n)} <span style="color:#444">(${v.c}x)</span></span><span style="color:var(--green);font-family:'DM Mono',monospace;font-size:12px">$${(v.t/v.h).toFixed(0)}/hr</span></div>`).join(''):`<div style="color:var(--dim);font-size:12px;text-align:center;padding:8px;">No sessions</div>`;
 }
 
 // ── SESSION FORM ─────────────────────────────────────────────────
@@ -886,8 +916,8 @@ function updFL(){
   const t=F.type;
   document.getElementById('fDur').style.display=t==='private'?'block':'none';
   document.getElementById('fPlay').style.display=(t==='event'||t==='other')?'none':'block';
-  const a=document.getElementById('mAmt'); const auto=t==='private'||t==='clinic';
-  a.readOnly=auto; a.style.opacity=auto?'0.6':'1'; if(auto) a.value='';
+  const a=document.getElementById('mAmt');
+  if(editSessId===null){ const auto=t==='private'||t==='clinic'; a.readOnly=auto; a.style.opacity=auto?'0.6':'1'; if(auto) a.value=''; }
   if(t==='event'||t==='other'){ F.players=null; document.getElementById('fPlay').querySelectorAll('.bopt').forEach(b=>b.classList.remove('sel')); document.getElementById('fClients').style.display='none'; }
   calcP();
 }
@@ -899,7 +929,7 @@ function updCL(){
 function calcP(){
   autoDescIfAuto();
   const t=F.type; let p=null;
-  if(t==='private'||t==='clinic'){ p=price(t,F.duration,F.players); if(p!==null) document.getElementById('mAmt').value=p; }
+  if(t==='private'||t==='clinic'){ const rp=price(t,F.duration,F.players); if(editSessId===null&&rp!==null) document.getElementById('mAmt').value=rp; p=editSessId===null?rp:parseFloat(document.getElementById('mAmt').value)||null; }
   else p=parseFloat(document.getElementById('mAmt').value)||null;
   const desc=document.getElementById('mDesc').value.trim(); const ok=F.type!==null&&p!==null&&p>0&&desc.length>0;
   set('ppV',p&&p>0?`$${fmt(p)}`:'—'); document.getElementById('mSub').disabled=!ok;
@@ -915,6 +945,7 @@ function openSess(){
   document.getElementById('mNotes').value=''; document.getElementById('mAmt').value=''; document.getElementById('mDesc').value='';
   document.getElementById('mAmt').readOnly=false; document.getElementById('mAmt').style.opacity='1';
   document.getElementById('fDur').style.display='none'; document.getElementById('fPlay').style.display='none'; document.getElementById('fClients').style.display='none';
+  const hint=document.getElementById('mAmtHint'); if(hint) hint.style.display='none';
 }
 function submitSess(){
   commitPendingDelete();
@@ -945,9 +976,9 @@ function editSess(id){
   document.getElementById('mNotes').value=s.notes||'';
   document.getElementById('fDur').style.display=s.type==='private'?'block':'none';
   document.getElementById('fPlay').style.display=(s.type==='event'||s.type==='other')?'none':'block';
-  const auto=s.type==='private'||s.type==='clinic';
-  document.getElementById('mAmt').readOnly=auto; document.getElementById('mAmt').style.opacity=auto?'0.6':'1';
+  document.getElementById('mAmt').readOnly=false; document.getElementById('mAmt').style.opacity='1';
   document.getElementById('mAmt').value=s.amount;
+  const hint=document.getElementById('mAmtHint'); if(hint) hint.style.display='block';
   if(F.players&&parseInt(F.players)>0){ updCL(); if(s.cl){ s.cl.forEach((n,idx)=>{ const el=document.getElementById(`cl${idx}`); if(el) el.value=n; }); } }
   else document.getElementById('fClients').style.display='none';
   set('ppV',`$${fmt(s.amount)}`);
@@ -1023,7 +1054,11 @@ function saveRatesEdit(){
   setTimeout(()=>{ b.textContent='SAVE RATES'; go('vApp'); goSc('settings',document.querySelectorAll('.nt')[4]); },800);
 }
 
-// ── EVENT DELEGATION: extra delete buttons ────────────────────────
+// ── EVENT DELEGATION ─────────────────────────────────────────────
+document.getElementById('profList').addEventListener('click',function(ev){
+  const item=ev.target.closest('[data-username]');
+  if(item) selP(item.dataset.username);
+});
 document.getElementById('sessList').addEventListener('click',function(ev){
   const btn=ev.target.closest('[data-del-extra]');
   if(btn) delX(parseInt(btn.dataset.delExtra));
