@@ -1,4 +1,4 @@
-const CACHE = 'neto-v7';
+const CACHE = 'neto-v8';
 const ASSETS = ['/', '/manifest.json'];
 
 self.addEventListener('install', e => {
