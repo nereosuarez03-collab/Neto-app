@@ -33,6 +33,7 @@ body{background:var(--bg);color:var(--chalk);font-family:'DM Sans',sans-serif;he
 .vbtn.p{background:var(--blue);color:#fff;}
 .vbtn.s{background:transparent;border:1px solid var(--border);color:var(--dim);}
 .vbtn.d{background:transparent;border:1px solid var(--red);color:var(--red);}
+.vbtn.g{background:transparent;border:1px solid var(--gold);color:var(--gold);}
 .vbtn:disabled{background:var(--border);color:#555;cursor:not-allowed;}
 .vlbl{font-family:'Bebas Neue',sans-serif;font-size:14px;letter-spacing:.5px;color:var(--blue);margin-bottom:2px;}
 .vlbl b{color:var(--gold);font-weight:400;}
@@ -467,6 +468,14 @@ input[type=date].finput{color-scheme:dark;}
         <div class="sg-t">My rates</div>
         <div id="ratesSumm" style="font-size:11px;color:var(--dim);line-height:2;margin-bottom:12px;"></div>
         <button class="vbtn p" onclick="go('vRatesEdit')">EDIT RATES</button>
+      </div>
+      <div class="sg-g">
+        <div class="sg-t">Backup &amp; Restore</div>
+        <p style="font-size:11px;color:var(--dim);margin-bottom:12px;line-height:1.6;">Export a backup file to your device. Restore it anytime to recover your data after clearing cache or switching devices.</p>
+        <button class="vbtn g" onclick="exportBackup()">EXPORT BACKUP</button>
+        <button class="vbtn g" onclick="document.getElementById('restoreInput').click()">RESTORE FROM FILE</button>
+        <input type="file" id="restoreInput" accept=".json" style="display:none" onchange="restoreBackup(this)">
+        <div id="backupMsg" style="display:none;font-size:12px;text-align:center;padding:6px 0;font-weight:500;"></div>
       </div>
       <div class="sg-g">
         <div class="sg-t">Account</div>
@@ -1052,6 +1061,46 @@ function saveRatesEdit(){
   const b=document.querySelector('#vRatesEdit .vbtn.p');
   b.textContent='SAVED ✓';
   setTimeout(()=>{ b.textContent='SAVE RATES'; go('vApp'); goSc('settings',document.querySelectorAll('.nt')[4]); },800);
+}
+
+// ── BACKUP / RESTORE ─────────────────────────────────────────────
+function exportBackup(){
+  if(!CU) return;
+  const data={version:'5.0',exportedAt:new Date().toISOString(),username:CU.u,sessions:S.sessions,extras:S.extras,goals:S.goals,rates:S.rates,profile:{u:CU.u,sp:CU.sp,ca:CU.ca}};
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download=`neto-backup-${CU.u.toLowerCase().replace(/[^a-z0-9]/g,'-')}-${todayStr()}.json`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showBackupMsg('✓ Backup downloaded','var(--green)');
+}
+function restoreBackup(input){
+  const file=input.files[0]; if(!file) return;
+  const reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      const data=JSON.parse(e.target.result);
+      if(!Array.isArray(data.sessions)||!Array.isArray(data.extras)||!data.goals){
+        showBackupMsg('✗ Invalid backup file','var(--red)'); input.value=''; return;
+      }
+      S.sessions=data.sessions;
+      S.extras=data.extras;
+      S.goals={...dG(),...data.goals};
+      S.rates=mR(data.rates||null);
+      saveData(); renderAll();
+      showBackupMsg(`✓ Restored ${S.sessions.length} session${S.sessions.length!==1?'s':''}`, 'var(--green)');
+    }catch(_){
+      showBackupMsg('✗ Could not read file','var(--red)');
+    }
+    input.value='';
+  };
+  reader.readAsText(file);
+}
+function showBackupMsg(msg,color){
+  const el=document.getElementById('backupMsg'); if(!el) return;
+  el.textContent=msg; el.style.color=color; el.style.display='block';
+  setTimeout(()=>{ el.style.display='none'; },3000);
 }
 
 // ── EVENT DELEGATION ─────────────────────────────────────────────
