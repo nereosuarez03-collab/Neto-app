@@ -459,6 +459,7 @@ input[type=date].finput{color-scheme:dark;}
         </div>
         <div class="snap-pl"><span>Summer goal</span><span id="snapGOF">of $20,000</span></div>
         <div class="snap-bar"><div class="snap-bf" id="snapBar" style="width:0%"></div></div>
+        <button id="shareBtn" onclick="shareReport()" style="width:100%;margin-top:14px;background:transparent;border:1px solid var(--gold);color:var(--gold);border-radius:10px;padding:13px;font-family:'Bebas Neue',sans-serif;font-size:17px;letter-spacing:2px;cursor:pointer;">SHARE THIS WEEK</button>
       </div>
       <div class="rpt-card">
         <div class="rpt-title">Coach report</div>
@@ -1237,6 +1238,22 @@ document.getElementById('dailyList').addEventListener('click',function(ev){
   const dr=ev.target.closest('.dr[data-date]');
   if(dr) toggleDayDetail(dr.dataset.date);
 });
+
+// ── SHARE ─────────────────────────────────────────────────────────
+async function shareReport(){
+  const weekLabel=document.getElementById('snapWk').textContent;
+  const total=document.getElementById('snapTot').textContent;
+  const sessions=document.getElementById('snapSub').textContent;
+  const text=`${weekLabel}\n${total} in lessons\n${sessions}\nTracked with NetO`;
+  if(navigator.share){
+    try{ await navigator.share({title:'NetO Weekly Report',text}); }catch(e){}
+  } else if(navigator.clipboard){
+    navigator.clipboard.writeText(text).then(()=>{
+      const btn=document.getElementById('shareBtn');
+      if(btn){ const orig=btn.textContent; btn.textContent='COPIED!'; setTimeout(()=>btn.textContent=orig,1500); }
+    });
+  }
+}
 
 // ── SERVICE WORKER ────────────────────────────────────────────────
 if('serviceWorker' in navigator){
