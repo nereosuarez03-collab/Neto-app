@@ -1316,7 +1316,7 @@ function renderClientList(){
   const list=document.getElementById('clientListCards'); if(!list) return;
   if(!clients.length){ list.innerHTML=`<div class="empty">👤<br>No clients yet.<br>Add client names when logging sessions to build your client list.</div>`; return; }
   if(!filtered.length){ list.innerHTML=`<div class="empty" style="padding:16px 0;">No clients match your search.</div>`; return; }
-  list.innerHTML=filtered.map(c=>`<div class="sc-card" style="margin-bottom:8px;cursor:pointer;" onclick="openClient(${JSON.stringify(c.name)})"><div style="display:flex;justify-content:space-between;align-items:flex-start;"><div style="font-size:14px;font-weight:500;color:var(--chalk)">${esc(c.name)}</div><div style="font-family:'Bebas Neue',sans-serif;font-size:19px;color:var(--green)">$${fmtAmt(c.totalSpend)}</div></div><div style="font-size:10px;color:var(--dim);margin-top:3px;">${fmtD(c.lastSession)} · ${c.sessionCount} session${c.sessionCount!==1?'s':''}</div></div>`).join('');
+  list.innerHTML=filtered.map(c=>`<div class="sc-card" style="margin-bottom:8px;cursor:pointer;" data-name="${esc(c.name)}" onclick="openClient(this.dataset.name)"><div style="display:flex;justify-content:space-between;align-items:flex-start;"><div style="font-size:14px;font-weight:500;color:var(--chalk)">${esc(c.name)}</div><div style="font-family:'Bebas Neue',sans-serif;font-size:19px;color:var(--green)">$${fmtAmt(c.totalSpend)}</div></div><div style="font-size:10px;color:var(--dim);margin-top:3px;">${fmtD(c.lastSession)} · ${c.sessionCount} session${c.sessionCount!==1?'s':''}</div></div>`).join('');
 }
 function openClient(name){
   currentClient=name;
