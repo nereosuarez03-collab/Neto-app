@@ -378,6 +378,7 @@ input[type=date].finput{color-scheme:dark;}
     <div class="nt" onclick="goSc('weekly',this)">Weekly</div>
     <div class="nt" onclick="goSc('goals',this)">Goals</div>
     <div class="nt" onclick="goSc('report',this)">Report</div>
+    <div class="nt" onclick="goSc('clients',this)">Clients</div>
     <div class="nt" onclick="goSc('settings',this)">⚙</div>
   </div>
   <div class="screens">
@@ -510,6 +511,15 @@ input[type=date].finput{color-scheme:dark;}
       <div class="ver">NetO v5.0</div>
     </div>
 
+    <!-- CLIENTS -->
+    <div class="sc" id="sc-clients">
+      <div class="sec-hd" style="margin-bottom:10px;">Clients <span id="clientCount"></span></div>
+      <div id="clientSearchWrap" style="display:none;margin-bottom:12px;">
+        <input type="text" class="finput" id="clientSearch" placeholder="Search clients..." oninput="renderClientList()">
+      </div>
+      <div id="clientListCards"></div>
+    </div>
+
   </div>
 </div>
 
@@ -544,7 +554,7 @@ input[type=date].finput{color-scheme:dark;}
       <div class="rt-card"><div class="rt-label">Off-court</div><div class="rt-wrap"><span class="rt-sym">$</span><input type="number" class="rt-inp" id="eev_offcourt"></div></div>
     </div>
     <button class="vbtn p" onclick="saveRatesEdit()" style="margin-top:10px;">SAVE RATES</button>
-    <button class="back-link" onclick="go('vApp');goSc('settings',document.querySelectorAll('.nt')[4])">← Back to settings</button>
+    <button class="back-link" onclick="go('vApp');goSc('settings',document.querySelectorAll('.nt')[5])">← Back to settings</button>
   </div>
 </div>
 
@@ -581,6 +591,24 @@ input[type=date].finput{color-scheme:dark;}
   </div>
 </div>
 
+<!-- CLIENT DETAIL -->
+<div class="view" id="vClient">
+  <div class="vbody">
+    <div class="vtitle" id="vClientName">Client</div>
+    <div class="sg">
+      <div class="sc-card"><div class="sc-lbl">Sessions</div><div class="sc-val" id="cliStatSessions">—</div></div>
+      <div class="sc-card"><div class="sc-lbl">Total earned</div><div class="sc-val" id="cliStatTotal" style="color:var(--green)">—</div></div>
+      <div class="sc-card"><div class="sc-lbl">Last session</div><div class="sc-val" id="cliStatLast" style="font-size:15px;">—</div></div>
+      <div class="sc-card"><div class="sc-lbl">Avg / session</div><div class="sc-val" id="cliStatAvg" style="color:var(--blue)">—</div></div>
+    </div>
+    <div class="sec-hd" style="margin-top:4px;">Session types</div>
+    <div class="pc" id="cliTypeList" style="margin-bottom:14px;"></div>
+    <div class="sec-hd">Recent sessions</div>
+    <div id="cliRecentList"></div>
+    <button class="back-link" onclick="go('vApp');goSc('clients',document.querySelectorAll('.nt')[4])">← Back to Clients</button>
+  </div>
+</div>
+
 <!-- UNDO TOAST -->
 <div id="undoToast" style="display:none;position:fixed;bottom:max(24px,env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);background:#1A1A1A;border:1px solid var(--border);border-radius:12px;padding:12px 16px;align-items:center;gap:12px;z-index:9999;min-width:260px;max-width:90vw;box-shadow:0 4px 24px rgba(0,0,0,.7);">
   <span style="font-size:13px;color:var(--chalk);flex:1;">Session deleted</span>
@@ -597,7 +625,7 @@ function lsSet(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch{} }
 function lsDel(k){ try{ localStorage.removeItem(k); }catch{} }
 
 // ── STATE ────────────────────────────────────────────────────────
-let CU=null, pinBuf='', rPinBuf='', pendingU='', obUser=null, wkOff=0, xType=null, editSessId=null, expandedDay=null, descUserEdited=false, undoSession=null, undoIdx=null, undoTimer=null, pinAttempts=0, pinLockUntil=0;
+let CU=null, pinBuf='', rPinBuf='', pendingU='', obUser=null, wkOff=0, xType=null, editSessId=null, expandedDay=null, descUserEdited=false, undoSession=null, undoIdx=null, undoTimer=null, pinAttempts=0, pinLockUntil=0, currentClient=null;
 let F={type:null,duration:null,players:null,eventType:null,eventHours:null};
 let S={sessions:[],extras:[],goals:{weekly:2000,monthly:7000,summer:20000},rates:dR()};
 
@@ -615,6 +643,7 @@ function go(id){
   document.getElementById(id)?.classList.add('on');
   if(id==='vLogin') renderProfiles();
   if(id==='vRatesEdit') populateRatesEdit();
+  if(id==='vClient') renderClientDetail();
   if(id==='vReg'){
     rPinBuf=''; updRPin(); chkReg();
     document.getElementById('rName').value='';
@@ -630,6 +659,7 @@ function goSc(name,el){
   if(el) el.classList.add('on');
   if(name==='goals') renderProj();
   if(name==='report'){ populateRpt(); renderReport(); }
+  if(name==='clients') renderClients();
 }
 
 // ── INIT ─────────────────────────────────────────────────────────
@@ -1180,7 +1210,7 @@ function saveRatesEdit(){
   saveData(); renderRatesSumm();
   const b=document.querySelector('#vRatesEdit .vbtn.p');
   b.textContent='SAVED ✓';
-  setTimeout(()=>{ b.textContent='SAVE RATES'; go('vApp'); goSc('settings',document.querySelectorAll('.nt')[4]); },800);
+  setTimeout(()=>{ b.textContent='SAVE RATES'; go('vApp'); goSc('settings',document.querySelectorAll('.nt')[5]); },800);
 }
 
 // ── BACKUP / RESTORE ─────────────────────────────────────────────
@@ -1253,6 +1283,61 @@ async function shareReport(){
       if(btn){ const orig=btn.textContent; btn.textContent='COPIED!'; setTimeout(()=>btn.textContent=orig,1500); }
     });
   }
+}
+
+// ── CLIENTS ──────────────────────────────────────────────────────
+function buildClients(){
+  const map={};
+  S.sessions.forEach(s=>{
+    if(!s.cl) return;
+    s.cl.filter(n=>n&&n.trim()).forEach(name=>{
+      const key=name.trim().toLowerCase();
+      if(!map[key]) map[key]={name:name.trim(),sessionCount:0,totalSpend:0,lastSession:'',types:{private:0,clinic:0,event:0,other:0}};
+      const c=map[key];
+      c.sessionCount++; c.totalSpend+=s.amount;
+      if(!c.lastSession||s.date>c.lastSession) c.lastSession=s.date;
+      c.types[s.type]=(c.types[s.type]||0)+1;
+    });
+  });
+  return Object.values(map).sort((a,b)=>b.lastSession.localeCompare(a.lastSession));
+}
+function renderClients(){
+  const clients=buildClients();
+  const countEl=document.getElementById('clientCount');
+  const searchWrap=document.getElementById('clientSearchWrap');
+  if(countEl) countEl.textContent=clients.length>0?clients.length:'';
+  if(searchWrap) searchWrap.style.display=clients.length>0?'block':'none';
+  renderClientList();
+}
+function renderClientList(){
+  const clients=buildClients();
+  const searchVal=(document.getElementById('clientSearch')?.value||'').toLowerCase().trim();
+  const filtered=searchVal?clients.filter(c=>c.name.toLowerCase().includes(searchVal)):clients;
+  const list=document.getElementById('clientListCards'); if(!list) return;
+  if(!clients.length){ list.innerHTML=`<div class="empty">👤<br>No clients yet.<br>Add client names when logging sessions to build your client list.</div>`; return; }
+  if(!filtered.length){ list.innerHTML=`<div class="empty" style="padding:16px 0;">No clients match your search.</div>`; return; }
+  list.innerHTML=filtered.map(c=>`<div class="sc-card" style="margin-bottom:8px;cursor:pointer;" onclick="openClient(${JSON.stringify(c.name)})"><div style="display:flex;justify-content:space-between;align-items:flex-start;"><div style="font-size:14px;font-weight:500;color:var(--chalk)">${esc(c.name)}</div><div style="font-family:'Bebas Neue',sans-serif;font-size:19px;color:var(--green)">$${fmtAmt(c.totalSpend)}</div></div><div style="font-size:10px;color:var(--dim);margin-top:3px;">${fmtD(c.lastSession)} · ${c.sessionCount} session${c.sessionCount!==1?'s':''}</div></div>`).join('');
+}
+function openClient(name){
+  currentClient=name;
+  go('vClient');
+}
+function renderClientDetail(){
+  if(!currentClient){ go('vApp'); goSc('clients',document.querySelectorAll('.nt')[4]); return; }
+  const clients=buildClients();
+  const c=clients.find(x=>x.name.toLowerCase()===currentClient.toLowerCase());
+  if(!c){ go('vApp'); goSc('clients',document.querySelectorAll('.nt')[4]); return; }
+  set('vClientName',c.name);
+  document.getElementById('cliStatSessions').textContent=c.sessionCount;
+  document.getElementById('cliStatTotal').textContent=`$${fmtAmt(c.totalSpend)}`;
+  document.getElementById('cliStatLast').textContent=fmtD(c.lastSession);
+  document.getElementById('cliStatAvg').textContent=`$${fmtAmt(c.sessionCount>0?c.totalSpend/c.sessionCount:0)}`;
+  const typeLabels={private:'Private',clinic:'Clinic',event:'Event',other:'Other'};
+  const typeHtml=Object.entries(c.types).filter(([,n])=>n>0).map(([t,n])=>`<div class="pr"><span><span class="si-tag si-tag-${t}">${typeLabels[t]}</span></span><span class="pv">${n} session${n!==1?'s':''}</span></div>`).join('');
+  document.getElementById('cliTypeList').innerHTML=typeHtml||`<div style="color:var(--dim);font-size:12px;padding:4px 0;">—</div>`;
+  const sessions=S.sessions.filter(s=>s.cl&&s.cl.some(n=>n.trim().toLowerCase()===c.name.toLowerCase())).sort((a,b)=>b.date.localeCompare(a.date));
+  const recentHtml=sessions.slice(0,5).map(s=>`<div class="si"><div class="si-left"><div class="si-type">${esc(s.desc)}</div><div class="si-meta">${fmtD(s.date)} · ${fmtSessMeta(s)}</div></div><div class="si-right"><div class="si-amt">$${fmtAmt(s.amount)}</div></div></div>`).join('');
+  document.getElementById('cliRecentList').innerHTML=recentHtml||`<div class="empty" style="padding:16px 0;">No recent sessions.</div>`;
 }
 
 // ── SERVICE WORKER ────────────────────────────────────────────────
